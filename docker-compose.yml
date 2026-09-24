@@ -1,0 +1,152 @@
+
+services:
+  # PostgreSQL для User Service
+  user-db:
+    image: postgres:latest
+    container_name: user-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: user_db
+    volumes:
+      - user_db_data:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d user_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL для Product Service
+  task-db:
+    image: postgres:latest
+    container_name: task-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: tasks
+    volumes:
+      - tasks_data:/var/lib/postgresql
+    ports:
+      - "5433:5432"
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tasks"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  # RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"    # AMQP порт
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Auth Service
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./src/services/auth_service/Dockerfile
+    container_name: auth-service
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+    ports:
+      - "8001:8000"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8001/ || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      user-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+  # Task Service
+  task-service:
+    build:
+      context: .
+      dockerfile: ./src/services/task_service/Dockerfile
+    container_name: task-service
+    environment:
+      USER_SERVICE_URL: http://auth-service:8000
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8002/ || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      task-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+
+  # Email Service
+  email-service:
+    build:
+      context: .
+      dockerfile: ./src/services/email_service/Dockerfile
+    container_name: email-service
+    environment:
+      USER_SERVICE_URL: http://auth-service:8000
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8003/ || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+
+volumes:
+  user_db_data:
+  tasks_data:
+  rabbitmq_data:
+
+networks:
+  microservices-network:
+    driver: bridge
