@@ -70,12 +70,21 @@ services:
     container_name: auth-service
     environment:
       SECRET_KEY: ${SECRET_KEY}
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+      DB_HOST: user-db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: ${DB_PASS}
+      DB_NAME: user_db
+      RABBIT_MQ_LOGIN: guest
+      RABBIT_MQ_PASSWORD: guest
+      RABBIT_MQ_HOST: rabbitmq
+      RABBIT_MQ_PORT: 5672
+      JWT_ACCESS_COOKIE_NAME: jwt_access
+      MODE: MODE
     ports:
       - "8001:8000"
     healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://localhost:8001/ || exit 1" ]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8000/ || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -95,12 +104,21 @@ services:
       dockerfile: ./src/services/task_service/Dockerfile
     container_name: task-service
     environment:
-      USER_SERVICE_URL: http://auth-service:8000
+      AUTH_SERVICE_URL: http://auth-service:8000
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/%2F
+      DB_HOST: task-db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASS: ${DB_PASS}
+      DB_NAME: tasks
+      RABBIT_MQ_LOGIN: guest
+      RABBIT_MQ_PASSWORD: guest
+      RABBIT_MQ_HOST: rabbitmq
+      RABBIT_MQ_PORT: 5672
     ports:
       - "8002:8000"
     healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://localhost:8002/ || exit 1" ]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8000/ || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -128,7 +146,7 @@ services:
     ports:
       - "8003:8000"
     healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://localhost:8003/ || exit 1" ]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8000/ || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -137,6 +155,26 @@ services:
         condition: service_healthy
       auth-service:
         condition: service_healthy
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+  # API Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: ./src/gateway/Dockerfile
+    container_name: gateway
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8000
+      TASK_SERVICE_URL: http://task-service:8000
+      EMAIL_SERVICE_URL: http://email-service:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth-service
+      - task-service
+      - email-service
     networks:
       - microservices-network
     restart: unless-stopped

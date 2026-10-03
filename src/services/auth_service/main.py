@@ -45,4 +45,4 @@ if __name__ == "__main__":
     rabbitmq_client = RabbitMQClient(settings.rabbitmq_url)
     RabbitMQConsumer.setup_rabbitmq_consumers(rabbitmq_client)
     EmailRabbitMQConsumer.setup_rabbitmq_consumers(rabbitmq_client)
-    uvicorn.run(app, host="127.0.0.1", port=8001, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
